@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ridgeline Run — a bush-plane ring run</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a141d; }
+  body { font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace; color: #dff4ff; }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  #hud { position: fixed; inset: 0; pointer-events: none; transition: opacity 0.4s; }
+  .panel { background: rgba(8, 14, 22, 0.72); border: 1px solid rgba(120, 220, 255, 0.35); border-radius: 6px; }
+  .label { color: #8fe3ff; font-size: 11px; letter-spacing: 1px; }
+
+  #compass { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); border-radius: 6px; }
+  #speed-tape { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); border-radius: 6px; }
+  #alt-tape { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); border-radius: 6px; }
+
+  #gauges { position: absolute; left: 14px; bottom: 16px; width: 220px; padding: 10px 12px; }
+  .bar-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+  .bar { flex: 1; height: 10px; background: #12202e; border: 1px solid rgba(143, 227, 255, 0.4); border-radius: 3px; overflow: hidden; }
+  .bar > div { height: 100%; background: #ffb347; transition: width 0.15s; }
+  #fuel-fill { background: #ffb347; }
+
+  #horizon-wrap { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); text-align: center; }
+  #horizon { border-radius: 50%; border: 1px solid rgba(120, 220, 255, 0.35); background: rgba(8, 14, 22, 0.72); }
+
+  #mission { position: absolute; right: 14px; bottom: 16px; padding: 10px 14px; text-align: right; font-size: 14px; line-height: 1.7; }
+  #mission b { color: #ffb347; }
+  #rings-text { font-size: 17px; font-weight: bold; color: #fff; }
+  #next-text { color: #8fe3ff; font-size: 12px; }
+
+  #message {
+    position: absolute; top: 22%; left: 50%; transform: translateX(-50%);
+    font-size: 30px; font-weight: bold; color: #ffb347; letter-spacing: 2px;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8); opacity: 0; white-space: nowrap;
+  }
+  #reticle { position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; transform: translate(-50%, -50%); opacity: 0.85; }
+  #reticle::before, #reticle::after { content: ''; position: absolute; background: rgba(255, 255, 255, 0.85); }
+  #reticle::before { left: 12px; top: 0; width: 2px; height: 26px; }
+  #reticle::after { left: 0; top: 12px; width: 26px; height: 2px; }
+  #hint {
+    position: absolute; left: 50%; bottom: 180px; transform: translateX(-50%);
+    font-size: 13px; color: #cfeeff; background: rgba(8, 14, 22, 0.6);
+    padding: 6px 12px; border-radius: 6px; transition: opacity 0.6s; white-space: nowrap;
+  }
+
+  .screen {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: linear-gradient(180deg, rgba(6, 12, 20, 0.25) 0%, rgba(6, 12, 20, 0.72) 100%);
+    pointer-events: auto; z-index: 10;
+  }
+  .card {
+    max-width: 620px; width: 92%; padding: 30px 36px; text-align: center;
+    background: rgba(8, 16, 26, 0.88); border: 1px solid rgba(143, 227, 255, 0.45);
+    border-radius: 12px; box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  }
+  .card h1 { font-size: 46px; letter-spacing: 4px; color: #fff; text-shadow: 0 0 24px rgba(143, 227, 255, 0.55); }
+  .card h2 { font-size: 30px; letter-spacing: 3px; }
+  .tagline { color: #8fe3ff; margin: 8px 0 18px; font-size: 15px; }
+  .card p { font-size: 14px; line-height: 1.7; color: #cfeeff; }
+  .dim { color: #7fa8bd; font-size: 13px; }
+  .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 22px; text-align: left; margin: 16px auto 6px; max-width: 480px; font-size: 13px; }
+  .controls b { color: #ffb347; font-weight: bold; }
+  .big-btn {
+    display: inline-block; margin-top: 20px; padding: 13px 34px; font-size: 18px; font-weight: bold;
+    letter-spacing: 2px; color: #08131c; background: #ffb347; border: none; border-radius: 8px;
+    cursor: pointer; font-family: inherit; animation: pulse 1.6s infinite;
+  }
+  .big-btn:hover { background: #ffc46b; }
+  @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 179, 71, 0.5); } 50% { box-shadow: 0 0 0 12px rgba(255, 179, 71, 0); } }
+  #selftest { position: fixed; left: -9999px; top: 0; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <canvas id="compass" width="420" height="44"></canvas>
+  <canvas id="speed-tape" width="90" height="260"></canvas>
+  <canvas id="alt-tape" width="90" height="260"></canvas>
+  <div id="reticle"></div>
+  <div id="message"></div>
+  <div id="hint">MOUSE steers · W/S pitch · A/D bank · SHIFT throttle up · CTRL throttle down · C cockpit · P pause</div>
+  <div id="gauges" class="panel">
+    <div class="bar-row"><span class="label" id="throttle-text">THR 0%</span><div class="bar"><div id="throttle-fill" style="width:0%"></div></div></div>
+    <div class="bar-row"><span class="label" id="fuel-text">FUEL 100%</span><div class="bar"><div id="fuel-fill" style="width:100%"></div></div></div>
+  </div>
+  <div id="horizon-wrap"><canvas id="horizon" width="150" height="150"></canvas></div>
+  <div id="mission" class="panel">
+    <div id="rings-text">RINGS 0 / 8</div>
+    <div id="score-text">SCORE 0</div>
+    <div id="time-text">TIME 00:00</div>
+    <div id="next-text"></div>
+  </div>
+</div>
+
+<div id="screen-title" class="screen">
+  <div class="card">
+    <h1>RIDGELINE RUN</h1>
+    <div class="tagline">A bush-plane ring run over a mountain lake valley</div>
+    <p>Take off from the valley airstrip, thread all <b>8 glowing rings</b> — over the lake,
+    through the mountain pass — then bring her home and land on the runway.
+    Rings refill your tank and pay <b>500 points</b> each. Mind the ridges: the valley
+    forgives no one, and an empty tank means a dead stick.</p>
+    <div class="controls">
+      <div><b>Mouse / Arrows</b> — steer &amp; bank</div>
+      <div><b>W / S</b> — pitch up / down</div>
+      <div><b>Shift / Ctrl</b> — throttle up / down</div>
+      <div><b>Space / B</b> — brake</div>
+      <div><b>C</b> — chase / cockpit view</div>
+      <div><b>P</b> — pause &nbsp;·&nbsp; <b>M</b> — mute</div>
+    </div>
+    <button class="big-btn" onclick="document.getElementById('game').dispatchEvent(new MouseEvent('mousedown'))">TAKE OFF</button>
+    <p class="dim" style="margin-top:12px">Click anywhere or press Enter to fly</p>
+  </div>
+</div>
+
+<div id="screen-pause" class="screen">
+  <div class="card">
+    <h2>PAUSED</h2>
+    <p class="dim" style="margin-top:10px">Press P or Esc to keep flying</p>
+  </div>
+</div>
+
+<div id="screen-end" class="screen">
+  <div class="card">
+    <h2 id="end-title">SORTIE COMPLETE</h2>
+    <p id="end-body" style="margin-top:14px"></p>
+    <button class="big-btn" onclick="document.getElementById('game').dispatchEvent(new MouseEvent('mousedown'))">FLY AGAIN</button>
+  </div>
+</div>
+
+<div id="selftest"></div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
